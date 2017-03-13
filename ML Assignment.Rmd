@@ -1,0 +1,161 @@
+---
+title: "COursera Assignment"
+author: "Francesca"
+date: "11 March 2017"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Executive Summary
+There are data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants; 
+they measure how the different body parts and the dumbell itself are moving as the participant is attempting to lift it.
+
+Participants were asked to lift the dumbell in 5 different ways, 1 correct way and 4 'wrong' ways.
+Our aim is to predict the manner in which the participants exercise such as "how well" an exercise is taking place.
+
+
+## load libraries
+```{r}
+library(caret)
+library(ggplot2)
+```
+
+## Get data - download csv then load
+
+```{r}
+Url_training <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+Url_testing <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+training <- read.csv(url(Url_training), na.strings=c("NA","#DIV/0!",""))
+testing <- read.csv(url(Url_testing), na.strings=c("NA","#DIV/0!",""))
+```
+
+## check data
+```{r}
+dim(training)
+
+dim(testing)
+
+```
+it seems first 7 variables have no predictive value
+
+## remove variables with many NAs and variables that seem to have no predictive value
+
+```{r}
+NA_Count = sapply(1:dim(training)[2],function(x)sum(is.na(training[,x])))
+NA_Count
+NA_list = which(NA_Count>0)
+
+```
+
+## remove unnecesary columns in training and test data sets then transform class into a factor
+
+```{r}
+training_cleaning <- training[,-NA_list]
+training_cleaning <- training_cleaning[,-c(1:7)]
+training_cleaning$classe = factor(training_cleaning$classe)
+
+inTrain <-createDataPartition(training_cleaning$classe, p=0.60, list=FALSE)
+training_clean = training_cleaning[inTrain,]
+validation_clean = training_cleaning[-inTrain,]
+
+testing_clean <- testing[,-NA_list]
+testing_clean <- testing_clean[,-c(1:7)]
+
+
+# head(testing_clean) # not shown in output 
+
+```
+
+## build models and decide which one performs best
+## this is a classification problem, and i will try random forest and classification tree
+
+These are methods used for supervised learning which are relevant for the class I am trying to predict since the class is known.
+
+A decision tree performs by running through all variables and picking the best split within the data set.
+This best split therefore should mean there are 2 distinct groups.
+
+The process of splitting each subset is repeated until the tree has reached a maximum depth,
+or the benefit of splitting the subset groups any further cannot be distinguished.
+
+The key difference between standard classification tree and random forest is that random forest builds many trees and combines them, usually by voting.
+The random forest is less likely to be influenced by quirks in the data (overfitting issue).
+But, on large datasets, it can be resource intensive and maybe hard to explain.
+
+Therefore, i will cross validate the random forest 3 times.
+I will expect random forest to perform better as the dataset is small.
+
+```{r}
+set.seed(2593)
+```
+
+Random Forest
+
+
+```{r}
+rfFit <- train(classe ~ ., method = "rf", data = training_clean, importance = T, trControl = trainControl(method = "cv", number = 3))
+
+
+#validation performance
+validation_rf_pred <- predict(rfFit, newdata=validation_clean)
+rf_confusion <-confusionMatrix(validation_rf_pred,validation_clean$classe)
+rf_confusion
+#looks good
+
+```
+
+##Random Forest Results seems satisfactory
+
+Classification Tree
+
+```{r}
+
+rpartFit <- train(classe ~ ., method = "rpart", data = training_clean)
+
+#training performance
+validation_rpart_pred <- predict(rpartFit, newdata=validation_clean)
+confusionMatrix(validation_rpart_pred,validation_clean$classe)
+#not as good
+
+```
+
+##Regressions trees are not as good as random forest in this case.
+
+## Therfore random forest is selected
+
+## important variables, expected error (1-accuracy) and predictions for test data:
+```{r}
+
+#Important Variables
+imp_rf <- varImp(rfFit)$importance
+varImpPlot(rfFit$finalModel, sort = TRUE, type = 1, pch = 19, col = 1, cex = 1, main = "Importance of the Predictors")
+
+#accuracy and expected error
+attributes(rf_confusion)
+rf_confusion$overall
+rf_confusion$overall['Accuracy']
+rf_confusion$overall['AccuracyUpper']
+rf_confusion$overall['AccuracyLower']
+
+
+testing_rf_pred <- predict(rfFit, newdata=testing_clean)
+testing_rf_pred
+```
+
+##writing out the predictions
+
+```{r}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("./assignm_ml_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(testing_rf_pred)
+
+testing_rf_pred
+```
